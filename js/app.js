@@ -615,6 +615,56 @@ function getCustomApiInfo(customApiIndex) {
     return customAPIs[index];
 }
 
+/**
+ * 计算视频名称与搜索关键词的相关性得分（分数越高表示越精准命中）。
+ * 用于搜索结果排序，把精确匹配的结果排到前面。
+ * 匹配优先级：完全相等 > 以关键词开头 > 包含关键词（越靠前越好） > 字符部分命中
+ */
+function calculateRelevanceScore(vodName, query) {
+    if (!query || !vodName) return 0;
+
+    // 归一化：全角转半角、转小写、去除空白与常见标点，消除格式差异带来的误判
+    const normalize = (str) => str.toString()
+        .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+        .toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/[·•・\-—_~!?.,、:;"'“”‘’()（）\[\]【】{}《》<>／\/|\\]/g, '');
+
+    const name = normalize(vodName);
+    const q = normalize(query);
+    if (!name || !q) return 0;
+
+    // 1. 名称与关键词完全一致 —— 最高优先级
+    if (name === q) return 1000000;
+
+    // 2. 名称以关键词开头 —— 后缀越短越精准
+    if (name.startsWith(q)) {
+        return 800000 - (name.length - q.length);
+    }
+
+    // 3. 名称包含关键词 —— 出现位置越靠前、名称越精简越精准
+    const idx = name.indexOf(q);
+    if (idx >= 0) {
+        return 600000 - idx * 100 - (name.length - q.length) * 10;
+    }
+
+    // 4. 字符按顺序部分命中（关键词字符散落在名称中）—— 按覆盖率给低分
+    let matched = 0;
+    let j = 0;
+    for (let i = 0; i < name.length && j < q.length; i++) {
+        if (name[i] === q[j]) {
+            matched++;
+            j++;
+        }
+    }
+    if (matched > 0) {
+        return Math.floor((matched / q.length) * 400000);
+    }
+
+    // 5. 完全不相关
+    return 0;
+}
+
 // 搜索功能 - 修改为支持多选API和多页结果
 async function search() {
     // 密码保护校验
@@ -658,13 +708,17 @@ async function search() {
             }
         });
 
-        // 对搜索结果进行排序：按名称优先，名称相同时按接口源排序
+        // 对搜索结果按与关键词的相关性排序：精准命中的结果排在前面
         allResults.sort((a, b) => {
-            // 首先按照视频名称排序
-            const nameCompare = (a.vod_name || '').localeCompare(b.vod_name || '');
-            if (nameCompare !== 0) return nameCompare;
-            
-            // 如果名称相同，则按照来源排序
+            const scoreA = calculateRelevanceScore(a.vod_name || '', query);
+            const scoreB = calculateRelevanceScore(b.vod_name || '', query);
+            if (scoreB !== scoreA) return scoreB - scoreA;
+
+            // 相关性相同时，名称更简短（冗余修饰更少）的优先
+            const lengthDiff = (a.vod_name || '').length - (b.vod_name || '').length;
+            if (lengthDiff !== 0) return lengthDiff;
+
+            // 最后按来源排序，保证结果顺序稳定
             return (a.source_name || '').localeCompare(b.source_name || '');
         });
 
