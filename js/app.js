@@ -1,5 +1,8 @@
 // 全局变量
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["tyyszy","dyttzy", "bfzy", "ruyi"]'); // 默认选中资源
+// 默认选中资源：仅保留实测可正常返回结果、且数据可靠的源（旧默认 tyyszy/dyttzy/bfzy/ruyi 已失效或返回垃圾数据）
+const DEFAULT_SELECTED_APIS = ["ffzy", "baidu", "mdzy"];
+const DEFAULT_SOURCES_VERSION = 2; // 默认源方案版本，用于老用户一次性迁移
+let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || JSON.stringify(DEFAULT_SELECTED_APIS)); // 默认选中资源
 let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
 
 // 添加当前播放的集数索引
@@ -28,7 +31,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 设置默认API选择（如果是第一次加载）
     if (!localStorage.getItem('hasInitializedDefaults')) {
         // 默认选中资源
-        selectedAPIs = ["tyyszy", "bfzy", "dyttzy", "ruyi"];
+        selectedAPIs = [...DEFAULT_SELECTED_APIS];
         localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
 
         // 默认选中过滤开关
@@ -40,6 +43,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 标记已初始化默认值
         localStorage.setItem('hasInitializedDefaults', 'true');
+        localStorage.setItem('defaultSourcesVersion', String(DEFAULT_SOURCES_VERSION));
+    } else {
+        // 老用户迁移：若仍在使用已失效的旧默认源组合，升级到可用源；
+        // 用户手动调整过（组合与旧默认不一致）则保留其选择，不覆盖。
+        const savedVersion = Number(localStorage.getItem('defaultSourcesVersion') || 1);
+        if (savedVersion < DEFAULT_SOURCES_VERSION) {
+            const LEGACY_DEFAULTS = ["tyyszy", "bfzy", "dyttzy", "ruyi"];
+            const isLegacyDefault = selectedAPIs.length === LEGACY_DEFAULTS.length &&
+                LEGACY_DEFAULTS.every(id => selectedAPIs.includes(id));
+            if (isLegacyDefault) {
+                selectedAPIs = [...DEFAULT_SELECTED_APIS];
+                localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+            }
+            localStorage.setItem('defaultSourcesVersion', String(DEFAULT_SOURCES_VERSION));
+        }
     }
 
     // 设置黄色内容过滤器开关初始状态
